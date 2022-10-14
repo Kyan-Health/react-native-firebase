@@ -130,7 +130,7 @@ describe('multi-factor', function () {
           e.message
             .toLocaleLowerCase()
             .should.equal(
-              '[auth/invalid-verification-code] The SMS verification code used to create the phone auth credential is invalid. Please resend the verification code sms and be sure to use the verification code provided by the user.'.toLocaleLowerCase(),
+              '[auth/invalid-verification-code] The SMS verification code used to create the phone auth credential is invalid. Please resend the verification code sms and be sure use the verification code provided by the user.'.toLocaleLowerCase(),
             );
 
           const verificationId = await firebase
@@ -414,7 +414,7 @@ describe('multi-factor', function () {
         // THEN an error message is thrown
         const actualMessage = e.message.toLocaleLowerCase();
         const expectedMessage =
-          '[auth/invalid-verification-code] The sms verification code used to create the phone auth credential is invalid. Please resend the verification code sms and be sure to use the verification code provided by the user.'.toLocaleLowerCase();
+          '[auth/invalid-verification-code] The sms verification code used to create the phone auth credential is invalid. Please resend the verification code sms and be sure use the verification code provided by the user.'.toLocaleLowerCase();
         should.equal(actualMessage, expectedMessage);
 
         return Promise.resolve();
