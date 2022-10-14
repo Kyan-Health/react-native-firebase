@@ -54,6 +54,7 @@ static __strong NSMutableDictionary *idTokenHandlers;
 // Used for caching credentials between method calls.
 static __strong NSMutableDictionary<NSString *, FIRAuthCredential *> *credentials;
 static __strong NSMutableDictionary<NSString *, FIRMultiFactorResolver *> *cachedResolver;
+static __strong NSMutableDictionary<NSString *, FIRMultiFactorSession *> *cachedSessions;
 
 @implementation RNFBAuthModule
 #pragma mark -
@@ -73,6 +74,7 @@ RCT_EXPORT_MODULE();
     idTokenHandlers = [[NSMutableDictionary alloc] init];
     credentials = [[NSMutableDictionary alloc] init];
     cachedResolver = [[NSMutableDictionary alloc] init];
+    cachedSessions = [[NSMutableDictionary alloc] init];
   });
   return self;
 }
@@ -99,6 +101,7 @@ RCT_EXPORT_MODULE();
 
   [credentials removeAllObjects];
   [cachedResolver removeAllObjects];
+  [cachedSessions removeAllObjects];
 }
 
 #pragma mark -
@@ -769,6 +772,26 @@ RCT_EXPORT_METHOD(verifyPhoneNumberWithMultiFactorInfo
                                   }
                                 }];
 }
+RCT_EXPORT_METHOD(verifyPhoneNumberForMultiFactor
+                  : (FIRApp *)firebaseApp
+                  : (NSString *)phoneNumber
+                  : (NSString *)sessionId
+                  : (RCTPromiseResolveBlock)resolve
+                  : (RCTPromiseRejectBlock)reject) {
+  FIRMultiFactorSession *session = cachedSessions[sessionId];
+  [FIRPhoneAuthProvider.provider
+       verifyPhoneNumber:phoneNumber
+              UIDelegate:nil
+      multiFactorSession:session
+              completion:^(NSString *_Nullable verificationID, NSError *_Nullable error) {
+                if (error != nil) {
+                  [self promiseRejectAuthException:reject error:error];
+                  return;
+                }
+
+                resolve(verificationID);
+              }];
+}
 
 RCT_EXPORT_METHOD(resolveMultiFactorSignIn
                   : (FIRApp *)firebaseApp
@@ -795,6 +818,50 @@ RCT_EXPORT_METHOD(resolveMultiFactorSignIn
                                                                    authResult:authResult];
                                                 }
                                               }];
+}
+
+RCT_EXPORT_METHOD(getSession
+                  : (FIRApp *)firebaseApp
+                  : (RCTPromiseResolveBlock)resolve
+                  : (RCTPromiseRejectBlock)reject) {
+  FIRUser *user = [FIRAuth authWithApp:firebaseApp].currentUser;
+  [[user multiFactor] getSessionWithCompletion:^(FIRMultiFactorSession *_Nullable session,
+                                                 NSError *_Nullable error) {
+    if (error != nil) {
+      [self promiseRejectAuthException:reject error:error];
+      return;
+    }
+
+    NSString *sessionId = [NSString stringWithFormat:@"%@", @([session hash])];
+    cachedSessions[sessionId] = session;
+    resolve(sessionId);
+  }];
+}
+
+RCT_EXPORT_METHOD(finalizeMultiFactorEnrollment
+                  : (FIRApp *)firebaseApp
+                  : (NSString *)verificationId
+                  : (NSString *)verificationCode
+                  : (NSString *_Nullable)displayName
+                  : (RCTPromiseResolveBlock)resolve
+                  : (RCTPromiseRejectBlock)reject) {
+  FIRPhoneAuthCredential *credential =
+      [FIRPhoneAuthProvider.provider credentialWithVerificationID:verificationId
+                                                 verificationCode:verificationCode];
+  FIRMultiFactorAssertion *assertion =
+      [FIRPhoneMultiFactorGenerator assertionWithCredential:credential];
+  FIRUser *user = [FIRAuth authWithApp:firebaseApp].currentUser;
+  [user.multiFactor enrollWithAssertion:assertion
+                            displayName:displayName
+                             completion:^(NSError *_Nullable error) {
+                               if (error != nil) {
+                                 [self promiseRejectAuthException:reject error:error];
+                                 return;
+                               }
+
+                               resolve(nil);
+                               return;
+                             }];
 }
 
 RCT_EXPORT_METHOD(verifyPhoneNumber
@@ -1360,8 +1427,12 @@ RCT_EXPORT_METHOD(useEmulator
     @"refreshToken" : user.refreshToken,
     @"tenantId" : user.tenantID ? (id)user.tenantID : [NSNull null],
     keyUid : user.uid,
-    @"multiFactor" : user.multiFactor.enrolledFactors
+    @"multiFactor" : [self convertMultiFactorData:user.multiFactor]
   };
+}
+
+- (NSDictionary *)convertMultiFactorData:(FIRMultiFactor *)multiFactor {
+  return @{@"enrolledFactors" : multiFactor.enrolledFactors};
 }
 
 - (NSDictionary *)authCredentialToDict:(FIRAuthCredential *)authCredential {
