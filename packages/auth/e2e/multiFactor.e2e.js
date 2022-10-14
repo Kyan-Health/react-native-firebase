@@ -59,7 +59,7 @@ describe('multi-factor', function () {
   });
 
   describe('sign-in', function () {
-    it('requires multi-factor auth when enrolled', async function () {
+    it(':android: requires multi-factor auth when enrolled', async function () {
       const { phoneNumber, email, password } = await createUserWithMultiFactor();
 
       try {
@@ -79,7 +79,12 @@ describe('multi-factor', function () {
           .verifyPhoneNumberWithMultiFactorInfo(resolver.hints[0], resolver.session);
         verificationId.should.be.a.String();
 
-        const verificationCode = await getLastSmsCode(phoneNumber);
+        let verificationCode = await getLastSmsCode(phoneNumber);
+        if (verificationCode == null) {
+          // iOS simulator uses a masked phone number
+          const maskedNumber = '+********' + phoneNumber.substring(phoneNumber.length - 4);
+          verificationCode = await getLastSmsCode(maskedNumber);
+        }
         const credential = firebase.auth.PhoneAuthProvider.credential(
           verificationId,
           verificationCode,
@@ -102,7 +107,7 @@ describe('multi-factor', function () {
 
       return Promise.reject(new Error('Multi-factor users need to handle an exception on sign-in'));
     });
-    it('reports an error when providing an invalid sms code', async function () {
+    it(':android: reports an error when providing an invalid sms code', async function () {
       const { phoneNumber, email, password } = await createUserWithMultiFactor();
 
       try {
@@ -121,9 +126,12 @@ describe('multi-factor', function () {
         try {
           await resolver.resolveSignIn(assertion);
         } catch (e) {
-          e.message.should.equal(
-            '[auth/invalid-verification-code] The sms verification code used to create the phone auth credential is invalid. Please resend the verification code sms and be sure use the verification code provided by the user.',
-          );
+          // Android / iOS and Web spell SMS differently
+          e.message
+            .toLocaleLowerCase()
+            .should.equal(
+              '[auth/invalid-verification-code] The SMS verification code used to create the phone auth credential is invalid. Please resend the verification code sms and be sure to use the verification code provided by the user.'.toLocaleLowerCase(),
+            );
 
           const verificationId = await firebase
             .auth()
@@ -141,7 +149,7 @@ describe('multi-factor', function () {
       }
       return Promise.reject();
     });
-    it('reports an error when providing an invalid verification code', async function () {
+    it(':android: reports an error when providing an invalid verification code', async function () {
       const { phoneNumber, email, password } = await createUserWithMultiFactor();
 
       try {
@@ -176,7 +184,7 @@ describe('multi-factor', function () {
   });
 
   describe('enroll', function () {
-    it("can't enroll an existing user without verified email", async function () {
+    it(":android: can't enroll an existing user without verified email", async function () {
       await firebase.auth().signInWithEmailAndPassword(TEST_EMAIL, TEST_PASS);
 
       try {
@@ -186,7 +194,7 @@ describe('multi-factor', function () {
           .auth()
           .verifyPhoneNumberForMultiFactor({ phoneNumber: getRandomPhoneNumber(), session });
       } catch (e) {
-        // TODO fix in code to mqtch web
+        // TODO fix in code to match web
         e.message.should.equal(
           '[auth/unknown] This operation requires a verified email. [ Need to verify email first before enrolling second factors. ]',
         );
@@ -197,7 +205,7 @@ describe('multi-factor', function () {
       return Promise.reject(new Error('Should throw error for unverified user.'));
     });
 
-    it('can enroll new factor', async function () {
+    it(':android: can enroll new factor', async function () {
       try {
         await createVerifiedUser('verified@example.com', 'test123');
         const phoneNumber = getRandomPhoneNumber();
@@ -226,7 +234,7 @@ describe('multi-factor', function () {
       }
       return Promise.resolve();
     });
-    it('can enroll new factor without display name', async function () {
+    it(':android: can enroll new factor without display name', async function () {
       try {
         await createVerifiedUser('verified@example.com', 'test123');
         const phoneNumber = getRandomPhoneNumber();
@@ -252,7 +260,7 @@ describe('multi-factor', function () {
       }
       return Promise.resolve();
     });
-    it('can enroll multiple factors', async function () {
+    it(':android: can enroll multiple factors', async function () {
       const { email, password, phoneNumber } = await createUserWithMultiFactor();
       await signInUserWithMultiFactor(email, password, phoneNumber);
 
@@ -279,7 +287,7 @@ describe('multi-factor', function () {
 
       return Promise.resolve();
     });
-    it('can not enroll the same factor twice', async function () {
+    it(':android: can not enroll the same factor twice', async function () {
       // This test should probably be implemented but doesn't work:
       // Every time the same phone number requests a verification code,
       // the emulator endpoint does not return a code, even though the emulator log
@@ -309,7 +317,7 @@ describe('multi-factor', function () {
         */
     });
 
-    it('throws an error for wrong verification id', async function () {
+    it(':android: throws an error for wrong verification id', async function () {
       const { phoneNumber, email, password } = await createUserWithMultiFactor();
 
       // GIVEN a MultiFactorResolver
@@ -404,15 +412,17 @@ describe('multi-factor', function () {
         await resolver.resolveSignIn(multiFactorAssertion);
       } catch (e) {
         // THEN an error message is thrown
-        e.message.should.equal(
-          '[auth/invalid-verification-code] The sms verification code used to create the phone auth credential is invalid. Please resend the verification code sms and be sure use the verification code provided by the user.',
-        );
+        const actualMessage = e.message.toLocaleLowerCase();
+        const expectedMessage =
+          '[auth/invalid-verification-code] The sms verification code used to create the phone auth credential is invalid. Please resend the verification code sms and be sure to use the verification code provided by the user.'.toLocaleLowerCase();
+        should.equal(actualMessage, expectedMessage);
+
         return Promise.resolve();
       }
       return Promise.reject();
     });
 
-    it('can not enroll with phone authentication (unsupported primary factor)', async function () {
+    it(':android: can not enroll with phone authentication (unsupported primary factor)', async function () {
       // GIVEN a user that only signs in with phone
       const testPhone = getRandomPhoneNumber();
       const confirmResult = await firebase.auth().signInWithPhoneNumber(testPhone);
